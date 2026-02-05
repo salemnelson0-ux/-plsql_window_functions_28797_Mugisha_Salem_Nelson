@@ -1,4 +1,9 @@
-
+=====================================
+PLSQL-Window Functions Assignment
+NAME:Mugisha Salem Nelson
+ID: 28797
+DATE:29/9/2025
+=====================================
 -- Create customers table
 CREATE TABLE customers (
     customer_id NUMBER PRIMARY KEY,
@@ -62,3 +67,139 @@ COMMIT;
 SELECT * FROM customers;
 SELECT * FROM routes;
 SELECT * FROM deliveries;
+
+-- ========================================
+ STEP 4: SQL JOINS IMPLEMENTATION
+-- ========================================
+
+ 1. INNER JOIN: Retrieve deliveries with valid customers and routes
+ Purpose: Show all successful deliveries with complete customer and route information
+SELECT 
+    d.delivery_id,
+    c.customer_name,
+    c.province AS customer_province,
+    r.route_name,
+    r.origin_province,
+    r.destination_province,
+    d.delivery_date,
+    d.on_time_flag,
+    d.delivery_time
+FROM deliveries d
+INNER JOIN customers c ON d.customer_id = c.customer_id
+INNER JOIN routes r ON d.route_id = r.route_id
+ORDER BY d.delivery_date DESC, d.delivery_id;
+
+-- Business Interpretation:
+-- This query shows all deliveries where both customer and route data exist.
+-- It confirms data integrity and helps track which customers use which routes most frequently.
+-- Management can use this to identify popular route-customer combinations for service optimization.
+
+
+-- ========================================
+ 2. LEFT JOIN: Identify customers who have never made a delivery
+ Purpose: Find inactive customers for re-engagement campaigns
+SELECT 
+    c.customer_id,
+    c.customer_name,
+    c.province,
+    c.customer_segment,
+    COUNT(d.delivery_id) AS total_deliveries
+FROM customers c
+LEFT JOIN deliveries d ON c.customer_id = d.customer_id
+GROUP BY c.customer_id, c.customer_name, c.province, c.customer_segment
+HAVING COUNT(d.delivery_id) = 0
+ORDER BY c.customer_name;
+
+-- Business Interpretation:
+-- This query identifies customers who have registered but never used the delivery service.
+-- These customers represent untapped potential and should be targeted with promotional campaigns.
+-- Marketing can use this list to design re-engagement strategies and understand barriers to first-time usage.
+
+
+-- ========================================
+ 3. RIGHT JOIN: Detect routes with no delivery activity
+ Purpose: Identify underutilized routes that may need evaluation
+SELECT 
+    r.route_id,
+    r.route_name,
+    r.origin_province,
+    r.destination_province,
+    r.distance_km,
+    COUNT(d.delivery_id) AS total_deliveries
+FROM deliveries d
+RIGHT JOIN routes r ON d.route_id = r.route_id
+GROUP BY r.route_id, r.route_name, r.origin_province, r.destination_province, r.distance_km
+HAVING COUNT(d.delivery_id) = 0
+ORDER BY r.route_name;
+
+-- Business Interpretation:
+-- This query reveals routes that exist in the system but have no delivery records.
+-- These routes may be newly created, seasonal, or inefficient and require operational review.
+-- Management should evaluate whether to discontinue these routes or invest in marketing them to customers.
+
+
+-- ========================================
+-- 4. FULL OUTER JOIN: Compare customers and routes including unmatched records
+-- Purpose: Get a complete view of all customers and routes, including those without deliveries
+SELECT 
+    c.customer_name,
+    c.province AS customer_province,
+    r.route_name,
+    r.origin_province,
+    r.destination_province,
+    d.delivery_id,
+    CASE 
+        WHEN d.delivery_id IS NOT NULL THEN 'Active Delivery'
+        WHEN c.customer_id IS NOT NULL AND d.delivery_id IS NULL THEN 'Customer Without Delivery'
+        WHEN r.route_id IS NOT NULL AND d.delivery_id IS NULL THEN 'Route Without Delivery'
+        ELSE 'No Match'
+    END AS record_status
+FROM customers c
+FULL OUTER JOIN deliveries d ON c.customer_id = d.customer_id
+FULL OUTER JOIN routes r ON d.route_id = r.route_id
+ORDER BY record_status, c.customer_name, r.route_name;
+
+-- Business Interpretation:
+-- This comprehensive query shows all possible combinations of customers and routes.
+-- It helps identify service gaps where customers exist but aren't using certain routes.
+-- Strategic planning can use this to match underutilized routes with potential customer bases in specific provinces.
+
+
+-- ========================================
+-- 5. SELF JOIN: Compare deliveries within the same time period
+-- Purpose: Identify delivery time variations on the same route and date
+SELECT 
+    d1.delivery_id AS delivery_1,
+    d1.delivery_time AS time_1,
+    d1.on_time_flag AS on_time_1,
+    d2.delivery_id AS delivery_2,
+    d2.delivery_time AS time_2,
+    d2.on_time_flag AS on_time_2,
+    ABS(d1.delivery_time - d2.delivery_time) AS time_difference_minutes,
+    d1.route_id,
+    d1.delivery_date
+FROM deliveries d1
+JOIN deliveries d2 ON d1.route_id = d2.route_id 
+    AND d1.delivery_date = d2.delivery_date
+    AND d1.delivery_id < d2.delivery_id
+WHERE ABS(d1.delivery_time - d2.delivery_time) > 10
+ORDER BY d1.delivery_date DESC, time_difference_minutes DESC;
+
+-- Business Interpretation:
+-- This query identifies inconsistencies in delivery times for the same route on the same day.
+-- Large time differences suggest operational inefficiencies or external factors affecting performance.
+-- Operations managers can investigate routes with high variability to standardize processes and improve reliability.
+
+
+-- ========================================
+-- VERIFICATION QUERIES
+-- ========================================
+
+-- Count total records in each table
+SELECT 'Customers' AS table_name, COUNT(*) AS total_records FROM customers
+UNION ALL
+SELECT 'Routes' AS table_name, COUNT(*) AS total_records FROM routes
+UNION ALL
+SELECT 'Deliveries' AS table_name, COUNT(*) AS total_records FROM deliveries;
+
+
