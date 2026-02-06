@@ -203,3 +203,281 @@ UNION ALL
 SELECT 'Deliveries' AS table_name, COUNT(*) AS total_records FROM deliveries;
 
 
+-- ========================================
+-- STEP 5: WINDOW FUNCTIONS IMPLEMENTATION
+-- ========================================
+
+-- ========================================
+-- CATEGORY 1: RANKING FUNCTIONS
+-- ========================================
+
+-- 1.1 ROW_NUMBER(): Assign unique sequential numbers to deliveries per route
+SELECT 
+    delivery_id,
+    route_id,
+    customer_id,
+    delivery_date,
+    delivery_time,
+    ROW_NUMBER() OVER (PARTITION BY route_id ORDER BY delivery_date) AS row_num
+FROM deliveries
+ORDER BY route_id, row_num;
+
+-- Interpretation:
+-- This assigns a unique number to each delivery on a route, ordered by date.
+-- Useful for identifying the first, second, third delivery on each route for trend analysis.
+
+
+-- 1.2 RANK(): Rank routes by average delivery time
+SELECT 
+    r.route_id,
+    r.route_name,
+    r.origin_province,
+    r.destination_province,
+    AVG(d.delivery_time) AS avg_delivery_time,
+    RANK() OVER (ORDER BY AVG(d.delivery_time)) AS performance_rank
+FROM routes r
+JOIN deliveries d ON r.route_id = d.route_id
+GROUP BY r.route_id, r.route_name, r.origin_province, r.destination_province
+ORDER BY performance_rank;
+
+-- Interpretation:
+-- Routes are ranked by average delivery time, with lower times receiving better ranks.
+-- This helps identify the most efficient routes and those needing improvement.
+
+
+-- 1.3 DENSE_RANK(): Rank customers by total deliveries
+SELECT 
+    c.customer_id,
+    c.customer_name,
+    c.province,
+    COUNT(d.delivery_id) AS total_deliveries,
+    DENSE_RANK() OVER (ORDER BY COUNT(d.delivery_id) DESC) AS customer_rank
+FROM customers c
+JOIN deliveries d ON c.customer_id = d.customer_id
+GROUP BY c.customer_id, c.customer_name, c.province
+ORDER BY customer_rank;
+
+-- Interpretation:
+-- Customers are ranked by delivery frequency using DENSE_RANK to avoid gaps in ranking.
+-- This identifies high-value customers who use the service most frequently for loyalty programs.
+
+
+-- 1.4 PERCENT_RANK(): Calculate percentile rank of delivery times
+SELECT 
+    delivery_id,
+    route_id,
+    delivery_time,
+    PERCENT_RANK() OVER (ORDER BY delivery_time) AS percentile_rank,
+    ROUND(PERCENT_RANK() OVER (ORDER BY delivery_time) * 100, 2) AS percentile
+FROM deliveries
+ORDER BY delivery_time;
+
+-- Interpretation:
+-- Shows where each delivery falls in the distribution of delivery times as a percentile.
+-- Deliveries in the lower percentiles are faster, while higher percentiles indicate slower deliveries.
+
+
+-- ========================================
+-- CATEGORY 2: AGGREGATE WINDOW FUNCTIONS
+-- ========================================
+
+-- 2.1 SUM() with ROWS frame: Running total of deliveries per route
+SELECT 
+    delivery_id,
+    route_id,
+    delivery_date,
+    delivery_time,
+    SUM(delivery_time) OVER (
+        PARTITION BY route_id 
+        ORDER BY delivery_date 
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS running_total_time
+FROM deliveries
+ORDER BY route_id, delivery_date;
+
+-- Interpretation:
+-- Calculates cumulative delivery time for each route over time using ROWS frame.
+-- Helps track total time invested in each route and identify routes requiring more resources.
+
+
+-- 2.2 AVG() with RANGE frame: Moving average of delivery times
+SELECT 
+    delivery_id,
+    route_id,
+    delivery_date,
+    delivery_time,
+    AVG(delivery_time) OVER (
+        PARTITION BY route_id 
+        ORDER BY delivery_date 
+        RANGE BETWEEN INTERVAL '2' DAY PRECEDING AND CURRENT ROW
+    ) AS three_day_moving_avg
+FROM deliveries
+ORDER BY route_id, delivery_date;
+
+-- Interpretation:
+-- Calculates a 3-day moving average of delivery times using RANGE frame for time-based windows.
+-- Smooths out daily fluctuations to reveal underlying trends in route performance.
+
+
+-- 2.3 MIN() and MAX(): Track best and worst delivery times per route
+SELECT 
+    delivery_id,
+    route_id,
+    delivery_date,
+    delivery_time,
+    MIN(delivery_time) OVER (PARTITION BY route_id) AS best_time_on_route,
+    MAX(delivery_time) OVER (PARTITION BY route_id) AS worst_time_on_route,
+    delivery_time - MIN(delivery_time) OVER (PARTITION BY route_id) AS difference_from_best
+FROM deliveries
+ORDER BY route_id, delivery_date;
+
+-- Interpretation:
+-- Shows the best and worst delivery times for each route alongside current performance.
+-- Helps identify performance variability and set realistic delivery time expectations.
+
+
+-- 2.4 SUM() with ROWS frame: Calculate percentage contribution
+SELECT 
+    c.customer_id,
+    c.customer_name,
+    COUNT(d.delivery_id) AS customer_deliveries,
+    SUM(COUNT(d.delivery_id)) OVER () AS total_deliveries,
+    ROUND(COUNT(d.delivery_id) * 100.0 / SUM(COUNT(d.delivery_id)) OVER (), 2) AS percentage_contribution
+FROM customers c
+JOIN deliveries d ON c.customer_id = d.customer_id
+GROUP BY c.customer_id, c.customer_name
+ORDER BY customer_deliveries DESC;
+
+-- Interpretation:
+-- Calculates each customer's contribution to total delivery volume as a percentage.
+-- Identifies which customers drive the most business for targeted retention strategies.
+
+
+-- ========================================
+-- CATEGORY 3: NAVIGATION FUNCTIONS
+-- ========================================
+
+-- 3.1 LAG(): Compare current delivery time with previous delivery on same route
+SELECT 
+    delivery_id,
+    route_id,
+    delivery_date,
+    delivery_time,
+    LAG(delivery_time, 1) OVER (PARTITION BY route_id ORDER BY delivery_date) AS previous_delivery_time,
+    delivery_time - LAG(delivery_time, 1) OVER (PARTITION BY route_id ORDER BY delivery_date) AS time_change
+FROM deliveries
+ORDER BY route_id, delivery_date;
+
+-- Interpretation:
+-- Compares each delivery time with the previous delivery on the same route.
+-- Positive values indicate slower deliveries, negative values indicate improvement over time.
+
+
+-- 3.2 LEAD(): Predict next delivery time trend
+SELECT 
+    delivery_id,
+    route_id,
+    delivery_date,
+    delivery_time,
+    LEAD(delivery_time, 1) OVER (PARTITION BY route_id ORDER BY delivery_date) AS next_delivery_time,
+    LEAD(delivery_time, 1) OVER (PARTITION BY route_id ORDER BY delivery_date) - delivery_time AS projected_change
+FROM deliveries
+ORDER BY route_id, delivery_date;
+
+-- Interpretation:
+-- Shows the next delivery time on the same route to identify forward-looking trends.
+-- Helps predict whether performance is improving or declining for proactive management.
+
+
+-- 3.3 LAG() and LEAD(): Calculate growth rate between periods
+SELECT 
+    delivery_id,
+    route_id,
+    delivery_date,
+    on_time_flag,
+    LAG(on_time_flag, 1) OVER (PARTITION BY route_id ORDER BY delivery_date) AS prev_on_time,
+    LEAD(on_time_flag, 1) OVER (PARTITION BY route_id ORDER BY delivery_date) AS next_on_time,
+    CASE 
+        WHEN LAG(on_time_flag, 1) OVER (PARTITION BY route_id ORDER BY delivery_date) = 0 
+             AND on_time_flag = 1 THEN 'Improved'
+        WHEN LAG(on_time_flag, 1) OVER (PARTITION BY route_id ORDER BY delivery_date) = 1 
+             AND on_time_flag = 0 THEN 'Declined'
+        ELSE 'Stable'
+    END AS performance_trend
+FROM deliveries
+ORDER BY route_id, delivery_date;
+
+-- Interpretation:
+-- Tracks whether on-time performance is improving, declining, or stable compared to previous delivery.
+-- Helps identify routes with consistent problems or recent improvements requiring attention.
+
+
+-- ========================================
+-- CATEGORY 4: DISTRIBUTION FUNCTIONS
+-- ========================================
+
+-- 4.1 NTILE(4): Segment customers into quartiles by delivery frequency
+SELECT 
+    c.customer_id,
+    c.customer_name,
+    c.province,
+    c.customer_segment,
+    COUNT(d.delivery_id) AS total_deliveries,
+    NTILE(4) OVER (ORDER BY COUNT(d.delivery_id) DESC) AS customer_quartile
+FROM customers c
+JOIN deliveries d ON c.customer_id = d.customer_id
+GROUP BY c.customer_id, c.customer_name, c.province, c.customer_segment
+ORDER BY customer_quartile, total_deliveries DESC;
+
+-- Interpretation:
+-- Divides customers into four equal groups based on delivery frequency.
+-- Quartile 1 represents top customers, Quartile 4 represents least active customers for targeted strategies.
+
+
+-- 4.2 CUME_DIST(): Calculate cumulative distribution of delivery times
+SELECT 
+    delivery_id,
+    route_id,
+    delivery_time,
+    CUME_DIST() OVER (ORDER BY delivery_time) AS cumulative_distribution,
+    ROUND(CUME_DIST() OVER (ORDER BY delivery_time) * 100, 2) AS cumulative_percentage
+FROM deliveries
+ORDER BY delivery_time;
+
+-- Interpretation:
+-- Shows the cumulative percentage of deliveries at or below each delivery time.
+-- Helps set service level agreements (SLAs) based on realistic performance distributions.
+
+
+-- 4.3 NTILE(4): Segment routes by performance quartiles
+SELECT 
+    r.route_id,
+    r.route_name,
+    AVG(d.delivery_time) AS avg_delivery_time,
+    NTILE(4) OVER (ORDER BY AVG(d.delivery_time)) AS performance_quartile
+FROM routes r
+JOIN deliveries d ON r.route_id = d.route_id
+GROUP BY r.route_id, r.route_name
+ORDER BY performance_quartile, avg_delivery_time;
+
+-- Interpretation:
+-- Segments routes into performance quartiles where Quartile 1 has fastest delivery times.
+-- Management can focus resources on improving Quartile 4 routes while maintaining Quartile 1 standards.
+
+
+-- 4.4 CUME_DIST() with NTILE(): Combined customer segmentation analysis
+SELECT 
+    c.customer_id,
+    c.customer_name,
+    COUNT(d.delivery_id) AS total_deliveries,
+    NTILE(4) OVER (ORDER BY COUNT(d.delivery_id) DESC) AS quartile,
+    ROUND(CUME_DIST() OVER (ORDER BY COUNT(d.delivery_id) DESC) * 100, 2) AS cumulative_pct
+FROM customers c
+JOIN deliveries d ON c.customer_id = d.customer_id
+GROUP BY c.customer_id, c.customer_name
+ORDER BY total_deliveries DESC;
+
+-- Interpretation:
+-- Combines quartile segmentation with cumulative distribution for comprehensive customer analysis.
+-- Shows both the customer's quartile group and their exact position in the overall distribution.
+
